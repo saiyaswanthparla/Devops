@@ -10,5 +10,5 @@ jobs:
       - name: printing test message
         run: echo "Learning GitHub Actions"
       - name: Checking current directory
-        run: echo "pwd"
+        run:  pwd
    
