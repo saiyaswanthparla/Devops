@@ -20,10 +20,6 @@ jobs:
         run: echo "Learning GitHub Actions"
       - name: Checking current directory
         run:  pwd
-     # - name: installing dependencies#
-      #  run:  npm install
-      #- name: build
-        #run:  npm run build
-        
+     
         
    
