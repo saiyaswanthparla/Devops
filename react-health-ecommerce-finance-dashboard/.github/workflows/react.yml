@@ -10,13 +10,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 26
+          node-version: 24
       - name: printing test message
         run: echo "Learning GitHub Actions"
       - name: Checking current directory
         run:  pwd
       - name: installing dependencies
-        run:  npm ci
+        run:  npm install
       - name: build
         run:  npm run build
         
