@@ -95,4 +95,32 @@ jobs:
               -i "$HOME/.ssh/ec2_key" \
               "${EC2_USER}@${EC2_HOST}" \
               "echo 'Connected to EC2 successfully'; hostname; whoami"
+        - name: Create deployment archive
+          run: |
+            tar -czf react-build.tar.gz -C downloaded-build .
+
+            echo "Deployment archive:"
+            ls -lh react-build.tar.gz
+
+        - name: Upload build archive to EC2
+          env:
+            EC2_HOST: ${{ secrets.EC2_HOST }}
+            EC2_USER: ${{ secrets.EC2_USER }}
+          run: |
+            scp \
+              -i "$HOME/.ssh/ec2_key" \
+              react-build.tar.gz \
+              "${EC2_USER}@${EC2_HOST}:/tmp/react-build-${GITHUB_SHA}.tar.gz"
+    
+        - name: Verify archive on EC2
+          env:
+            EC2_HOST: ${{ secrets.EC2_HOST }}
+            EC2_USER: ${{ secrets.EC2_USER }}
+          run: |
+            ssh \
+              -i "$HOME/.ssh/ec2_key" \
+              "${EC2_USER}@${EC2_HOST}" \
+              "test -s /tmp/react-build-${GITHUB_SHA}.tar.gz &&
+                echo 'Build archive uploaded successfully' &&
+                ls -lh /tmp/react-build-${GITHUB_SHA}.tar.gz"
         
