@@ -123,4 +123,57 @@ jobs:
               "test -s /tmp/react-build-${GITHUB_SHA}.tar.gz &&
                 echo 'Build archive uploaded successfully' &&
                 ls -lh /tmp/react-build-${GITHUB_SHA}.tar.gz"
+        - name: Deploy build on EC2
+          env:
+            EC2_HOST: ${{ secrets.EC2_HOST }}
+            EC2_USER: ${{ secrets.EC2_USER }}
+          run: |
+            ssh \
+              -i "$HOME/.ssh/ec2_key" \
+              "${EC2_USER}@${EC2_HOST}" \
+              "DEPLOY_SHA='${GITHUB_SHA}' RUN_ID='${GITHUB_RUN_ID}' bash -s" <<'REMOTE_SCRIPT'
+                set -euo pipefail
+
+                ARCHIVE="/tmp/react-build-${DEPLOY_SHA}.tar.gz"
+                STAGING="/home/ec2-user/react-staging-${DEPLOY_SHA}"
+                DESTINATION="/home/ec2-user/copy"
+                BACKUP="/home/ec2-user/deployment-backups/${RUN_ID}"
+
+                echo "Checking uploaded archive"
+                test -s "$ARCHIVE"
+
+                echo "Creating staging directory"
+                rm -rf "$STAGING"
+                mkdir -p "$STAGING"
+
+                echo "Extracting build"
+                tar -xzf "$ARCHIVE" -C "$STAGING"
+
+                test -f "$STAGING/index.html" || {
+                  echo "ERROR: index.html was not found"
+                  exit 1
+                }
+
+                echo "Backing up current deployment"
+                mkdir -p "/home/ec2-user/deployment-backups"
+
+                if [ -d "$DESTINATION" ]; then
+                  cp -a "$DESTINATION" "$BACKUP"
+                fi
+
+                echo "Deploying new build"
+                mkdir -p "$DESTINATION"
+                find "$DESTINATION" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+                cp -a "$STAGING"/. "$DESTINATION"/
+
+                echo "Verifying deployed files"
+                test -f "$DESTINATION/index.html"
+                find "$DESTINATION" -maxdepth 2 -type f -print
+
+                echo "Cleaning temporary files"
+                rm -rf "$STAGING"
+                rm -f "$ARCHIVE"
+
+                echo "React application deployed successfully"
+            REMOTE_SCRIPT
         
