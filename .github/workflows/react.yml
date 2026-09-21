@@ -31,9 +31,8 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        
+      - name: Code Build
+        run: npm run build
 
-      - name: Printing test message
-        run: echo "Learning GitHub Actions"
 
-      - name: Checking current directory
-        run: pwd
