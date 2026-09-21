@@ -1,0 +1,39 @@
+name: React Application Setup
+
+on:
+ workflow_dispatch: 
+
+jobs:
+  first-workflow:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Debug
+        run: |
+          pwd
+          ls -la
+          node -v
+          npm -v
+
+      - name: Verify files
+        run: |
+          ls -la
+          test -f package.json && echo "package.json FOUND"
+          test -f package-lock.json && echo "package-lock.json FOUND"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Printing test message
+        run: echo "Learning GitHub Actions"
+
+      - name: Checking current directory
+        run: pwd
