@@ -72,4 +72,27 @@ jobs:
             echo "Downloaded files:"
             find downloaded-build -maxdepth 2 -type f -print
             echo "Artifact Download Success"
+        - name: Configure SSH
+          env:
+            SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+            EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+          run: |
+            mkdir -p "$HOME/.ssh"
+            chmod 700 "$HOME/.ssh"
+  
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/ec2_key"
+            chmod 600 "$HOME/.ssh/ec2_key"
+  
+            printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+            chmod 600 "$HOME/.ssh/known_hosts"
+  
+        - name: Test EC2 connection
+          env:
+            EC2_HOST: ${{ secrets.EC2_HOST }}
+            EC2_USER: ${{ secrets.EC2_USER }}
+          run: |
+            ssh \
+              -i "$HOME/.ssh/ec2_key" \
+              "${EC2_USER}@${EC2_HOST}" \
+              "echo 'Connected to EC2 successfully'; hostname; whoami"
         
