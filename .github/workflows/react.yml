@@ -51,7 +51,7 @@ jobs:
           find dist -maxdepth 2 -type f -print
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: react-build
           path: dist/
@@ -63,8 +63,7 @@ jobs:
       needs: first-workflow
       steps:
         - name: Download build artifact
-          uses: actions/download-artifact@v4
-          with:
+          uses: actions/download-artifact@v8
             name: react-build
             path: downloaded-build
         - name: Verify downloaded artifact
@@ -175,6 +174,50 @@ jobs:
                 rm -f "$ARCHIVE"
 
                 echo "React application deployed successfully"
+            REMOTE_SCRIPT
+        - name: Validate Nginx deployment
+          env:
+            EC2_HOST: ${{ secrets.EC2_HOST }}
+            EC2_USER: ${{ secrets.EC2_USER }}
+          run: |
+            ssh \
+              -i "$HOME/.ssh/ec2_key" \
+              "${EC2_USER}@${EC2_HOST}" \
+              "bash -s" <<'REMOTE_SCRIPT'
+                set -euo pipefail
+
+                echo "Verifying deployed files"
+                test -f /home/ec2-user/copy/index.html
+
+                echo "Testing Nginx configuration"
+                sudo nginx -t
+
+                echo "Checking Nginx service"
+                if ! sudo systemctl is-active --quiet nginx; then
+                  echo "Nginx is not running. Starting it..."
+                  sudo systemctl start nginx
+                fi
+
+                echo "Reloading Nginx"
+                sudo systemctl reload nginx
+
+                echo "Testing application locally"
+                STATUS_CODE="$(
+                  curl \
+                    --silent \
+                    --output /dev/null \
+                    --write-out '%{http_code}' \
+                    http://127.0.0.1/
+                )"
+
+                echo "Local HTTP status: $STATUS_CODE"
+
+                test "$STATUS_CODE" = "200" || {
+                  echo "ERROR: Nginx did not return HTTP 200"
+                  exit 1
+                }
+
+                echo "Nginx deployment verified successfully"
             REMOTE_SCRIPT
         - name: Verify public application
           env:
