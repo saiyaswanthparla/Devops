@@ -34,5 +34,27 @@ jobs:
         
       - name: Code Build
         run: npm run build
+      
+      - name: Verify build output
+        run: |
+          test -d dist || {
+            echo "::error::dist directory was not created"
+            exit 1
+          }
 
+          test -f dist/index.html || {
+            echo "::error::dist/index.html was not created"
+            exit 1
+          }
+
+          echo "Build output verified successfully"
+          find dist -maxdepth 2 -type f -print
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-build
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
 
