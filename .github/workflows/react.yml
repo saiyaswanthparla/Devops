@@ -51,7 +51,7 @@ jobs:
           find dist -maxdepth 2 -type f -print
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: react-build
           path: dist/
@@ -63,7 +63,7 @@ jobs:
       needs: first-workflow
       steps:
         - name: Download build artifact
-          uses: actions/download-artifact@v8
+          uses: actions/download-artifact@v4
           with:
             name: react-build
             path: downloaded-build
@@ -176,4 +176,30 @@ jobs:
 
                 echo "React application deployed successfully"
             REMOTE_SCRIPT
-        
+        - name: Verify public application
+          env:
+            EC2_HOST: ${{ secrets.EC2_HOST }}
+          run: |
+            for ATTEMPT in 1 2 3 4 5; do
+              STATUS_CODE="$(
+                curl \
+                  --silent \
+                  --output /dev/null \
+                  --write-out '%{http_code}' \
+                  --max-time 15 \
+                  "http://${EC2_HOST}/" || true
+              )"
+
+              echo "Attempt $ATTEMPT: HTTP $STATUS_CODE"
+
+              if [ "$STATUS_CODE" = "200" ]; then
+                echo "Application deployment successful"
+                echo "URL: http://${EC2_HOST}/"
+                exit 0
+              fi
+
+              sleep 5
+            done
+
+            echo "::error::Public application verification failed"
+            exit 1
