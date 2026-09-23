@@ -1,4 +1,4 @@
-name: React Application CI/CD
+name: React Application Build and EC2 Deployment
 
 on:
   workflow_dispatch:
@@ -8,25 +8,25 @@ permissions:
 
 jobs:
   build:
-    name: Build and Upload Artifact
+    name: Build React Application
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "24"
           cache: npm
 
       - name: Display environment information
         run: |
           pwd
-          ls -la
           node --version
           npm --version
+          ls -la
 
       - name: Verify project files
         run: |
@@ -40,12 +40,12 @@ jobs:
             exit 1
           }
 
-          echo "Required project files found"
+          echo "Required project files are present"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build application
+      - name: Build React application
         run: npm run build
 
       - name: Verify build output
@@ -60,40 +60,76 @@ jobs:
             exit 1
           }
 
-          echo "Build output verified successfully"
+          echo "React build verified successfully"
           find dist -maxdepth 2 -type f -print
 
-      - name: Upload build artifact
+      - name: Upload React build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: react-build
+          name: react-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist/
           retention-days: 7
           if-no-files-found: error
 
   deploy:
-    name: Deploy Artifact to EC2
+    name: Deploy React Application to EC2
     runs-on: ubuntu-latest
     needs: build
 
+    env:
+      ARCHIVE_ROOT: ${{ vars.EC2_ARCHIVE_ROOT }}
+      STAGING_ROOT: ${{ vars.EC2_STAGING_ROOT }}
+      DESTINATION_PATH: ${{ vars.EC2_DESTINATION }}
+      BACKUP_ROOT: ${{ vars.EC2_BACKUP_ROOT }}
+
     steps:
-      - name: Download build artifact
+      - name: Download React build artifact
         uses: actions/download-artifact@v8
         with:
-          name: react-build
+          name: react-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: downloaded-build
 
       - name: Verify downloaded artifact
         run: |
-          echo "Downloaded files:"
-          find downloaded-build -maxdepth 2 -type f -print
-
-          test -f downloaded-build/index.html || {
-            echo "::error::Downloaded index.html was not found"
+          test -d downloaded-build || {
+            echo "::error::downloaded-build directory was not created"
             exit 1
           }
 
-          echo "Artifact download successful"
+          test -f downloaded-build/index.html || {
+            echo "::error::downloaded-build/index.html was not found"
+            exit 1
+          }
+
+          echo "Downloaded artifact files:"
+          find downloaded-build -maxdepth 2 -type f -print
+
+      - name: Verify deployment configuration
+        run: |
+          test -n "$ARCHIVE_ROOT" || {
+            echo "::error::EC2_ARCHIVE_ROOT variable is empty"
+            exit 1
+          }
+
+          test -n "$STAGING_ROOT" || {
+            echo "::error::EC2_STAGING_ROOT variable is empty"
+            exit 1
+          }
+
+          test -n "$DESTINATION_PATH" || {
+            echo "::error::EC2_DESTINATION variable is empty"
+            exit 1
+          }
+
+          test -n "$BACKUP_ROOT" || {
+            echo "::error::EC2_BACKUP_ROOT variable is empty"
+            exit 1
+          }
+
+          echo "Archive root: $ARCHIVE_ROOT"
+          echo "Staging root: $STAGING_ROOT"
+          echo "Destination: $DESTINATION_PATH"
+          echo "Backup root: $BACKUP_ROOT"
 
       - name: Configure SSH
         env:
@@ -123,11 +159,12 @@ jobs:
         run: |
           tar -czf react-build.tar.gz -C downloaded-build .
 
-          echo "Deployment archive:"
-          ls -lh react-build.tar.gz
+          test -s react-build.tar.gz
 
-          echo "Archive contents:"
-          tar -tzf react-build.tar.gz
+          tar -tzf react-build.tar.gz > /dev/null
+
+          echo "Deployment archive created successfully"
+          ls -lh react-build.tar.gz
 
       - name: Upload build archive to EC2
         env:
@@ -137,7 +174,7 @@ jobs:
           scp \
             -i "$HOME/.ssh/ec2_key" \
             react-build.tar.gz \
-            "${EC2_USER}@${EC2_HOST}:/tmp/react-build-${GITHUB_SHA}.tar.gz"
+            "${EC2_USER}@${EC2_HOST}:${ARCHIVE_ROOT}/react-build-${GITHUB_SHA}.tar.gz"
 
       - name: Verify archive on EC2
         env:
@@ -147,11 +184,11 @@ jobs:
           ssh \
             -i "$HOME/.ssh/ec2_key" \
             "${EC2_USER}@${EC2_HOST}" \
-            "test -s /tmp/react-build-${GITHUB_SHA}.tar.gz &&
+            "test -s '${ARCHIVE_ROOT}/react-build-${GITHUB_SHA}.tar.gz' &&
              echo 'Build archive uploaded successfully' &&
-             ls -lh /tmp/react-build-${GITHUB_SHA}.tar.gz"
+             ls -lh '${ARCHIVE_ROOT}/react-build-${GITHUB_SHA}.tar.gz'"
 
-      - name: Deploy build on EC2
+      - name: Deploy build through staging
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
@@ -159,30 +196,65 @@ jobs:
           ssh \
             -i "$HOME/.ssh/ec2_key" \
             "${EC2_USER}@${EC2_HOST}" \
-            "DEPLOY_SHA='${GITHUB_SHA}' RUN_ID='${GITHUB_RUN_ID}' RUN_ATTEMPT='${GITHUB_RUN_ATTEMPT}' bash -s" <<'REMOTE_SCRIPT'
+            "DEPLOY_SHA='${GITHUB_SHA}' \
+             RUN_ID='${GITHUB_RUN_ID}' \
+             RUN_ATTEMPT='${GITHUB_RUN_ATTEMPT}' \
+             ARCHIVE_ROOT='${ARCHIVE_ROOT}' \
+             STAGING_ROOT='${STAGING_ROOT}' \
+             DESTINATION_PATH='${DESTINATION_PATH}' \
+             BACKUP_ROOT='${BACKUP_ROOT}' \
+             bash -s" <<'REMOTE_SCRIPT'
               set -euo pipefail
 
-              ARCHIVE="/tmp/react-build-${DEPLOY_SHA}.tar.gz"
-              STAGING="/home/ec2-user/react-staging-${DEPLOY_SHA}"
-              DESTINATION="/home/ec2-user/copy"
-              BACKUP="/home/ec2-user/deployment-backups/${RUN_ID}-${RUN_ATTEMPT}"
+              echo "Confirming deployment configuration"
+
+              test -n "$DEPLOY_SHA"
+              test -n "$RUN_ID"
+              test -n "$RUN_ATTEMPT"
+              test -n "$ARCHIVE_ROOT"
+              test -n "$STAGING_ROOT"
+              test -n "$DESTINATION_PATH"
+              test -n "$BACKUP_ROOT"
+
+              ARCHIVE="${ARCHIVE_ROOT}/react-build-${DEPLOY_SHA}.tar.gz"
+              STAGING="${STAGING_ROOT}/react-staging-${DEPLOY_SHA}"
+              DESTINATION="$DESTINATION_PATH"
+              BACKUP="${BACKUP_ROOT}/${RUN_ID}-${RUN_ATTEMPT}"
+
+              echo "Archive: $ARCHIVE"
+              echo "Staging: $STAGING"
+              echo "Destination: $DESTINATION"
+              echo "Backup: $BACKUP"
 
               echo "Checking uploaded archive"
-              test -s "$ARCHIVE"
 
-              echo "Creating staging directory"
+              test -s "$ARCHIVE"
+              tar -tzf "$ARCHIVE" > /dev/null
+
+              echo "Uploaded archive is valid"
+
+              echo "Creating clean staging directory"
+
               rm -rf "$STAGING"
               mkdir -p "$STAGING"
 
-              echo "Extracting build"
+              test -d "$STAGING"
+
+              echo "Extracting build into staging"
+
               tar -xzf "$ARCHIVE" -C "$STAGING"
 
+              echo "Verifying staged build"
+
               test -f "$STAGING/index.html" || {
-                echo "ERROR: index.html was not found"
+                echo "ERROR: index.html was not found in staging"
                 exit 1
               }
 
+              find "$STAGING" -maxdepth 2 -type f -print
+
               echo "Checking deployment permissions"
+
               mkdir -p "$DESTINATION"
 
               test -w "$DESTINATION" || {
@@ -191,27 +263,49 @@ jobs:
                 exit 1
               }
 
+              echo "Creating backup root"
+
+              mkdir -p "$BACKUP_ROOT"
+
               echo "Backing up current deployment"
-              mkdir -p "/home/ec2-user/deployment-backups"
 
               if [ -n "$(find "$DESTINATION" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
                 rm -rf "$BACKUP"
-                cp -a "$DESTINATION" "$BACKUP"
+                mkdir -p "$BACKUP"
+                cp -a "$DESTINATION"/. "$BACKUP"/
+
+                test -f "$BACKUP/index.html" || {
+                  echo "ERROR: Backup index.html was not created"
+                  exit 1
+                }
+
+                echo "Current deployment backed up to $BACKUP"
+              else
+                echo "Destination is empty; no backup is required"
               fi
 
-              echo "Deploying new build"
+              echo "Clearing current deployment"
+
               find "$DESTINATION" \
                 -mindepth 1 \
                 -maxdepth 1 \
                 -exec rm -rf -- {} +
 
+              echo "Copying staged build into destination"
+
               cp -a "$STAGING"/. "$DESTINATION"/
 
               echo "Verifying deployed files"
-              test -f "$DESTINATION/index.html"
+
+              test -f "$DESTINATION/index.html" || {
+                echo "ERROR: Deployed index.html was not found"
+                exit 1
+              }
+
               find "$DESTINATION" -maxdepth 2 -type f -print
 
-              echo "Cleaning temporary files"
+              echo "Cleaning temporary deployment files"
+
               rm -rf "$STAGING"
               rm -f "$ARCHIVE"
 
@@ -226,30 +320,33 @@ jobs:
           ssh \
             -i "$HOME/.ssh/ec2_key" \
             "${EC2_USER}@${EC2_HOST}" \
-            "bash -s" <<'REMOTE_SCRIPT'
+            "DESTINATION_PATH='${DESTINATION_PATH}' bash -s" <<'REMOTE_SCRIPT'
               set -euo pipefail
 
-              echo "Verifying deployed files"
-              test -f /home/ec2-user/copy/index.html
+              echo "Verifying deployed index.html"
+
+              test -f "$DESTINATION_PATH/index.html"
 
               echo "Testing Nginx configuration"
+
               sudo nginx -t
 
               echo "Checking Nginx service"
+
               if ! sudo systemctl is-active --quiet nginx; then
-                echo "Nginx is not running. Starting it..."
+                echo "Nginx is not running; starting it"
                 sudo systemctl start nginx
               fi
 
-              echo "Reloading Nginx"
-              sudo systemctl reload nginx
-
               echo "Testing application locally"
+
               STATUS_CODE="$(
                 curl \
                   --silent \
+                  --show-error \
                   --output /dev/null \
                   --write-out '%{http_code}' \
+                  --max-time 15 \
                   http://127.0.0.1/
               )"
 
@@ -271,6 +368,7 @@ jobs:
             STATUS_CODE="$(
               curl \
                 --silent \
+                --show-error \
                 --output /dev/null \
                 --write-out '%{http_code}' \
                 --max-time 15 \
