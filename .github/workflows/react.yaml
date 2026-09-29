@@ -2,7 +2,7 @@ name: React workflow
 on:
   workflow_dispatch: 
 jobs:
-  scratch:
+  basic:
     runs-on: ubuntu-latest
     steps:
      - name: Printing message
@@ -14,11 +14,28 @@ jobs:
        with:
          node-version: 24
      - name: install dependenices
-       run: npm ci
+       run : npm ci
      - name: check version
        run : node --version
      - name: build application
        run: npm run build
-     - name: Verify index.html
+     - name: Verify index.htmlv and build files
        run : find dist -maxdepth 2 -type f -print
-          
+             test -f dist/index.html
+     - name: Uploading Artifact
+       uses: actions/upload-artifact@v7
+       with:
+         name: react-files
+         path: dist/
+         retention-days : 7
+         if-no-files-found: error
+  deploy:
+    runs-on: ubuntu-latest
+    needs: scratch
+    steps:
+     - name: Download build artifact
+       uses: actions/download-artifact@v7
+       with:
+         name: react-files
+         path: downloaded-build
+  
