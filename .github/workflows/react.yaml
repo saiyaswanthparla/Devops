@@ -46,13 +46,13 @@ jobs:
      - name: Configure SSH
        env:
          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY}}
-         EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS}}
+         KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS}}
        run: |
          mkdir -p "$HOME/.ssh"
          chmod 700 "$HOME/.ssh"
          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/ec2_key"
          chmod 600 "$HOME/.ssh/ec2_key"
-         printf '%s\n' "$EC2_Hosts" > "$HOME/.ssh/known_hosts"
+         printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
          chmod 600 "$HOME/.ssh/known_hosts"
      
      - name: Test Ec2 connection 
@@ -64,8 +64,8 @@ jobs:
          "hostname; whoami"
      - name: Copy files 
        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
+         EC2_HOST: ${{ secrets.EC2_HOST }}
+         EC2_USER: ${{ secrets.EC2_USER }}
        run: |
          scp -i "$HOME/.ssh/ec2_key" react-files.tar.gz \
          "${EC2_USER}@${EC2_HOST}:/tmp/react-files.tar.gz"
