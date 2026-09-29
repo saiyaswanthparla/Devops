@@ -7,4 +7,18 @@ jobs:
     steps:
      - name: Printing message
        run: echo "Learning Github Actions"
+     - name: Checkout repository
+       uses: actions/checkout@v7
+     - name: Install node.js
+       uses: actions/setup-node@v7
+       with:
+         node-version: 24
+     - name: install dependenices
+       run: npm ci
+     - name: check version
+       run: npm --version
+     - name: build application
+       run: npm run build
+     - name: Verify index.html
+       run : test -f dist/index.html
           
