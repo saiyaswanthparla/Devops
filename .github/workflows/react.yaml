@@ -16,7 +16,7 @@ jobs:
      - name: install dependenices
        run: npm ci
      - name: check version
-       run : node -- version
+       run : node --version
      - name: build application
        run: npm run build
      - name: Verify index.html
