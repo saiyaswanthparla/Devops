@@ -83,4 +83,10 @@ jobs:
             STAGING="${{ vars.EC2_STAGING }}/react-staging"
             DESTINATION="${{ vars.EC2_DESTINATION }}"
             test -s "$ARCHIVE"
+            rm -rf "$STAGING"
+            mkdir -p "$STAGING"
+            tar -xzf "$ARCHIVE" -C "$STAGING"
+            test -f "$STAGING/index.html"
+            mkdir -p "$DESTINATION"
+            test -w "$DESTINATION"
          REMOTE_SCRIPT
