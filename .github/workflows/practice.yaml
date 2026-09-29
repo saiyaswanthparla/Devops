@@ -1,0 +1,10 @@
+name: Practice workflow
+on:
+  workflow_dispatch: 
+jobs:
+  scratch:
+    runs-on: ubuntu-latest
+    steps:
+     - name: Printing message
+       run: echo "Learning Github Actions"
+          
