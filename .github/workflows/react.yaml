@@ -39,17 +39,21 @@ jobs:
        with:
          name: react-files
          path: downloaded-build
+     - name: Archive files
+       run: |
+        tar -czf react-files.tar.gz -C downloaded-build .
+        tar -tzf react-files.tar.gz   
      - name: Configure SSH
        env:
-         SSH_Private_Key: ${{ secrets.EC2_SSH_PRIVATE_KEY}}
-         EC2_Hosts: ${{ secrets.EC2_KNOWN_HOSTS}}
+         SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY}}
+         KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS}}
        run: |
          mkdir -p "$HOME/.ssh"
          chmod 700 "$HOME/.ssh"
          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/ec2_key"
          chmod 600 "$HOME/.ssh/ec2_key"
-         printf '%s\n' "$EC2_Hosts" > "$HOME/.ssh/ec2_hosts"
-         chmod 600 "$HOME/.ssh/ec2_hosts"\
+         printf '%s\n' "$EC2_Hosts" > "$HOME/.ssh/known_hosts"
+         chmod 600 "$HOME/.ssh/known_hosts"
      
      - name: Test Ec2 connection 
        env:
