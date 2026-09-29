@@ -79,9 +79,9 @@ jobs:
          bash -s <<'REMOTE_SCRIPT'
           set -euo pipefail
 
-            ARCHIVE= "${{ vars.EC2_ARCHIVE }}/react-files.tar.gz"
-            STAGING= "${{ vars.EC2_STAGING }}/react-staging"
-            DESTINATION= ""${{ vars.EC2_DESTINATION }}"
+            ARCHIVE="${{ vars.EC2_ARCHIVE }}/react-files.tar.gz"
+            STAGING="${{ vars.EC2_STAGING }}/react-staging"
+            DESTINATION="${{ vars.EC2_DESTINATION }}"
             echo "Archive: $ARCHIVE"
             echo "Staging: $STAGING"
             echo "Destination: $DESTINATION"
