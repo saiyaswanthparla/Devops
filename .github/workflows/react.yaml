@@ -82,7 +82,5 @@ jobs:
             ARCHIVE="${{ vars.EC2_ARCHIVE }}/react-files.tar.gz"
             STAGING="${{ vars.EC2_STAGING }}/react-staging"
             DESTINATION="${{ vars.EC2_DESTINATION }}"
-            echo "Archive: $ARCHIVE"
-            echo "Staging: $STAGING"
-            echo "Destination: $DESTINATION"
+            test -s "ARCHIVE"
          REMOTE_SCRIPT
