@@ -82,11 +82,33 @@ jobs:
             ARCHIVE="${{ vars.EC2_ARCHIVE }}/react-files.tar.gz"
             STAGING="${{ vars.EC2_STAGING }}/react-staging"
             DESTINATION="${{ vars.EC2_DESTINATION }}"
-            test -s "$ARCHIVE"
-            rm -rf "$STAGING"
-            mkdir -p "$STAGING"
-            tar -xzf "$ARCHIVE" -C "$STAGING"
-            test -f "$STAGING/index.html"
-            mkdir -p "$DESTINATION"
-            test -w "$DESTINATION"
-         REMOTE_SCRIPT
+            BACKUP_ROOT="${{ vars.EC2_BACKUP }}"
+            BACKUP="$BACKUP_ROOT/${{ github.run_id }}-${{ github.run_attempt }}"
+          # Check the uploaded archive
+              test -s "$ARCHIVE"
+          # Create the STAGING   
+              rm -rf "$STAGING"
+              mkdir -p "$STAGING"
+          # Extract and verify the new build
+              tar -xzf "$ARCHIVE" -C "$STAGING"
+              test -f "$STAGING/index.html"
+          # Prepare the live destination
+              mkdir -p "$DESTINATION"
+              test -w "$DESTINATION"
+          # Extract and verify the new build
+              mkdir -p "$BACKUP_ROOT"
+              if [ -n "$(find "$DESTINATION" -mindepth 1 -print -quit)" ]; then
+              mkdir -p "$BACKUP"
+              cp -a "$DESTINATION"/. "$BACKUP"/
+            fi
+          # Remove the old live application
+              find "$DESTINATION" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          # Deploy the staged application
+              cp -a "$STAGING"/. "$DESTINATION"/
+          # Verify the deployed application
+              test -f "$DESTINATION/index.html"
+              find "$DESTINATION" -maxdepth 2 -type f -print
+          # Remove temporary files
+              rm -rf "$STAGING"
+              rm -f "$ARCHIVE"
+           REMOTE_SCRIPT
