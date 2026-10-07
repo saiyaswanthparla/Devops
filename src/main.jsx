@@ -19,6 +19,7 @@ function App() {
     <div className="app">
       <aside className={menuOpen ? 'sidebar open' : 'sidebar'}>
         <div className="brand"><Activity size={25}/> Nexus<span>Dash</span></div>
+	  <p>Environment: {import.meta.env.VITE_APP_ENV}</p>
         <nav>
           {[
             ['Overview', Home], ['Health', HeartPulse], ['Commerce', ShoppingCart], ['Finance', Wallet]
