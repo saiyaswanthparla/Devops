@@ -81,9 +81,6 @@ jobs:
           ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
             "IMAGE_TAG='$IMAGE_TAG' SERVICE_NAME='$SERVICE_NAME' bash -se" <<'REMOTE'
           cd /home/ec2-user/docker-app
-          echo "TEST: Simulating deployment validation failure"
-          exit 1
-
           echo "Checking Compose service: $SERVICE_NAME"
 
           CONTAINER_ID=$(docker compose ps -q "$SERVICE_NAME")
