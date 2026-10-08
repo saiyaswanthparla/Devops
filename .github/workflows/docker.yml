@@ -1,122 +1,189 @@
+
 name: Docker with Github Actions
+
 on:
   workflow_dispatch:
+
+concurrency:
+  group: docker-ec2-production
+  cancel-in-progress: false
+
 jobs:
   Docker:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Learning Docker with Github Actions
-      run: echo "Learning Docker with GitHub Actions"
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3
-      with: 
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-    - name: Build Docker image
-      run: docker build -t saiyaswanthp/myimage:${{ github.sha }}  .
-    - name: Push Docker image
-      run: docker push saiyaswanthp/myimage:${{ github.sha }}
-    - name: Configure SSH
-      env:
-         SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY}}
-         KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS}}
-      run: |
-       mkdir -p "$HOME/.ssh"
-       chmod 700 "$HOME/.ssh"
-       printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/ec2_key"
-       chmod 600 "$HOME/.ssh/ec2_key"
-       printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-       chmod 600 "$HOME/.ssh/known_hosts"
-    - name: Test Ec2 connection 
-      env:
-        EC2_HOST: ${{ secrets.EC2_HOST}}
-        EC2_USER: ${{ secrets.EC2_USER}}
-      run: |
-        ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
-        "hostname; whoami"
-    - name: Deploy Docker application
-      id: deploy
-      env:
-        EC2_HOST: ${{ secrets.EC2_HOST }}
-        EC2_USER: ${{ secrets.EC2_USER }}
-      run: |
-        ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" "
+      - name: Learning Docker with Github Actions
+        run: echo "Learning Docker with GitHub Actions"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: docker build -t saiyaswanthp/myimage:${{ github.sha }} .
+
+      - name: Push Docker image
+        run: docker push saiyaswanthp/myimage:${{ github.sha }}
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/ec2_key"
+          chmod 600 "$HOME/.ssh/ec2_key"
+
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Test EC2 connection
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
+            "hostname && whoami"
+
+      - name: Deploy Docker application
+        id: deploy
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
+            "IMAGE_TAG='$IMAGE_TAG' bash -se" <<'REMOTE'
           cd /home/ec2-user/docker-app
-          export IMAGE_TAG=${{ github.sha }}
+
+          echo "Deploying image: $IMAGE_TAG"
+
           docker compose pull
           docker compose up -d
-        "
-    - name: Validate Docker deployment
-      id: validation
-      env:
-        EC2_HOST: ${{ secrets.EC2_HOST }}
-        EC2_USER: ${{ secrets.EC2_USER }}
-        SERVICE_NAME: web
-        IMAGE_TAG: ${{ github.sha }}
-      run: |
-        ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
-          "IMAGE_TAG='$IMAGE_TAG' SERVICE_NAME='$SERVICE_NAME' bash -se" <<'REMOTE'
+          REMOTE
+
+      - name: Validate Docker deployment
+        id: validation
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          SERVICE_NAME: web
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
+            "IMAGE_TAG='$IMAGE_TAG' SERVICE_NAME='$SERVICE_NAME' bash -se" <<'REMOTE'
           cd /home/ec2-user/docker-app
-    
+
+          echo "Checking Compose service: $SERVICE_NAME"
+
           CONTAINER_ID=$(docker compose ps -q "$SERVICE_NAME")
-    
+
           if [ -z "$CONTAINER_ID" ]; then
             echo "Web container not found"
             exit 1
           fi
-    
+
           ACTUAL_IMAGE=$(docker inspect "$CONTAINER_ID" --format '{{.Config.Image}}')
           EXPECTED_IMAGE="saiyaswanthp/myimage:$IMAGE_TAG"
-    
+
           echo "Expected image: $EXPECTED_IMAGE"
           echo "Actual image: $ACTUAL_IMAGE"
-    
+
           if [ "$ACTUAL_IMAGE" != "$EXPECTED_IMAGE" ]; then
             echo "Deployment image mismatch"
             exit 1
           fi
-    
-          HEALTH_STATUS=$(docker inspect "$CONTAINER_ID" --format '{{.State.Health.Status}}')
-    
-          echo "Container health: $HEALTH_STATUS"
-    
+
+          echo "Waiting for container to become healthy..."
+
+          HEALTH_STATUS="starting"
+
+          for i in {1..12}; do
+            HEALTH_STATUS=$(docker inspect "$CONTAINER_ID" \
+              --format '{{.State.Health.Status}}')
+
+            echo "Health attempt $i: $HEALTH_STATUS"
+
+            if [ "$HEALTH_STATUS" = "healthy" ]; then
+              break
+            fi
+
+            if [ "$HEALTH_STATUS" = "unhealthy" ]; then
+              echo "Container is unhealthy"
+              exit 1
+            fi
+
+            sleep 5
+          done
+
           if [ "$HEALTH_STATUS" != "healthy" ]; then
-            echo "Container is not healthy"
+            echo "Container did not become healthy in time"
             exit 1
           fi
-    
-          curl --fail --retry 5 --retry-delay 5 \
-            --retry-connrefused http://localhost:8090
-        REMOTE
-    - name: Save successful image version
-      env:
-        EC2_HOST: ${{ secrets.EC2_HOST }}
-        EC2_USER: ${{ secrets.EC2_USER }}
-      run: |
-        ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" "
-          echo '${{ github.sha }}' > /home/ec2-user/docker-app/last-successful-image
-        "
-    - name: Rollback on deployment failure
-      if: ${{ failure() && (steps.deploy.outcome == 'failure' || steps.validation.outcome == 'failure') }}
-      env:
-        EC2_HOST: ${{ secrets.EC2_HOST }}
-        EC2_USER: ${{ secrets.EC2_USER }}
-      run: |
-        ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" 'bash -se' <<'REMOTE'
+
+          echo "Validating HTTP response..."
+
+          curl --fail \
+            --retry 10 \
+            --retry-delay 3 \
+            --retry-all-errors \
+            http://localhost:8090
+
+          echo "Deployment validation successful"
+          REMOTE
+
+      - name: Save successful image version
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
+            'bash -se' <<'REMOTE'
           cd /home/ec2-user/docker-app
+          REMOTE
+
+          ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
+            "printf '%s\n' '${{ github.sha }}' > /home/ec2-user/docker-app/last-successful-image"
+
+      - name: Rollback on deployment failure
+        if: ${{ failure() && (steps.deploy.outcome == 'failure' || steps.validation.outcome == 'failure') }}
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
+            'bash -se' <<'REMOTE'
+          cd /home/ec2-user/docker-app
+
           if [ ! -s last-successful-image ]; then
             echo "No previous successful image available"
             exit 1
           fi
+
           PREVIOUS_SHA=$(cat last-successful-image)
+
           echo "Rolling back to: $PREVIOUS_SHA"
+
           export IMAGE_TAG="$PREVIOUS_SHA"
+
           docker compose pull
           docker compose up -d
-          curl --fail --retry 5 --retry-delay 5 \
-            --retry-connrefused http://localhost:8090
-        REMOTE
 
-        
+          echo "Waiting for rollback application..."
+
+          curl --fail \
+            --retry 10 \
+            --retry-delay 3 \
+            --retry-all-errors \
+            http://localhost:8090
+
+          echo "Rollback completed successfully"
+          REMOTE
