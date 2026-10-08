@@ -53,12 +53,31 @@ jobs:
       env:
         EC2_HOST: ${{ secrets.EC2_HOST }}
         EC2_USER: ${{ secrets.EC2_USER }}
+        SERVICE_NAME: web
+        IMAGE_TAG: ${{ github.sha }}
       run: |
         ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" "
           set -e
           cd /home/ec2-user/docker-app
-          docker compose ps
-          curl --fail --retry 5 --retry-delay 5 --retry-connrefused http://localhost:8090
+          export IMAGE_TAG="$IMAGE_TAG"
+          CONTAINER_ID=$(docker compose ps -q "$SERVICE_NAME")
+          
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "Web container not found"
+            exit 1
+          fi
+          
+          ACTUAL_IMAGE=$(docker inspect "$CONTAINER_ID" --format '{{.Config.Image}}')
+          
+          EXPECTED_IMAGE="saiyaswanthp/myimage:$IMAGE_TAG"
+          
+          echo "Expected image: $EXPECTED_IMAGE"
+          echo "Actual image: $ACTUAL_IMAGE"
+          
+          if [ "$ACTUAL_IMAGE" != "$EXPECTED_IMAGE" ]; then
+            echo "Deployment image mismatch"
+            exit 1
+          fi
         "
     - name: Save successful image version
       env:
