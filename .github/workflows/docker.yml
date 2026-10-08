@@ -18,3 +18,64 @@ jobs:
       run: docker build -t saiyaswanthp/myimage:${{ github.sha }}  .
     - name: Push Docker image
       run: docker push saiyaswanthp/myimage:${{ github.sha }}
+    - name: Configure SSH
+      env:
+         SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY}}
+         KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS}}
+      run: |
+       mkdir -p "$HOME/.ssh"
+       chmod 700 "$HOME/.ssh"
+       printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/ec2_key"
+       chmod 600 "$HOME/.ssh/ec2_key"
+       printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+       chmod 600 "$HOME/.ssh/known_hosts"
+    - name: Test Ec2 connection 
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST}}
+        EC2_USER: ${{ secrets.EC2_USER}}
+      run: |
+        ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
+        "hostname; whoami"
+    - name: Pull Docker image on EC2
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST}}
+        EC2_USER: ${{ secrets.EC2_USER}}
+      run: |
+       ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" \
+         "docker pull saiyaswanthp/myimage:${{ github.sha }}"
+    - name: Deploy Docker application
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USER: ${{ secrets.EC2_USER }}
+      run: |
+        ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" "
+          cd /home/ec2-user/docker-app
+          export IMAGE_TAG=${{ github.sha }}
+          docker compose pull
+          docker compose up -d
+        "
+    - name: Validate Docker deployment
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USER: ${{ secrets.EC2_USER }}
+      run: |
+        ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" "
+          cd /home/ec2-user/docker-app
+          docker compose ps
+
+          curl --fail \
+              --retry 5 \
+              --retry-delay 5 \
+              --retry-connrefused \
+              http://localhost:8090
+        "
+    - name: Save successful image version
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USER: ${{ secrets.EC2_USER }}
+      run: |
+        ssh -i "$HOME/.ssh/ec2_key" "${EC2_USER}@${EC2_HOST}" "
+          echo '${{ github.sha }}' > /home/ec2-user/docker-app/last-successful-image
+        "
+
+    
